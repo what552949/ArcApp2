@@ -1,6 +1,7 @@
 package com.example.arcapp;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -8,6 +9,7 @@ import android.app.Service;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -15,6 +17,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Path;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -22,6 +25,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -34,9 +38,14 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -45,14 +54,17 @@ public class FloatingService extends Service {
 
     private WindowManager wm;
     private WebView webView;
+    private LinearLayout buttonGroup;
     private ImageView lockButton;
+    private TextView swipeButton;
     private WindowManager.LayoutParams webParams;
-    private WindowManager.LayoutParams lockParams;
+    private WindowManager.LayoutParams groupParams;
     private boolean locked = false;
     private boolean viewAdded = false;
 
     private ValueCallback<Uri[]> filePathCallback;
-    private static final int LOCK_SIZE_DP = 56;
+    private static final int BUTTON_HEIGHT_DP = 48;
+    private static final int BUTTON_WIDTH_DP = 96;
 
     private final Handler lockHandler = new Handler(Looper.getMainLooper());
     private long lastClickTime = 0;
@@ -76,7 +88,7 @@ public class FloatingService extends Service {
 
         createNotification();
         createWebView();
-        createLockButton();
+        createButtonGroup();
         viewAdded = true;
     }
 
@@ -137,6 +149,7 @@ public class FloatingService extends Service {
         });
 
         webView.addJavascriptInterface(new Object() {
+
             @JavascriptInterface
             public void requestLoadImage() {
                 lockHandler.post(new Runnable() {
@@ -146,6 +159,42 @@ public class FloatingService extends Service {
                     }
                 });
             }
+
+            @JavascriptInterface
+            public void autoSwipePath(String pointsJson, int duration) {
+                try {
+                    JSONArray arr = new JSONArray(pointsJson);
+                    Path path = new Path();
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject pt = arr.getJSONObject(i);
+                        float x = (float) pt.getDouble("x");
+                        float y = (float) pt.getDouble("y");
+                        if (i == 0) path.moveTo(x, y);
+                        else path.lineTo(x, y);
+                    }
+                    ArcAccessibilityService.swipePath(path, duration);
+                } catch (Exception ignored) {}
+            }
+
+            @JavascriptInterface
+            public boolean isAccessibilityReady() {
+                return ArcAccessibilityService.isReady();
+            }
+
+            @JavascriptInterface
+            public void openAccessibilitySettings() {
+                lockHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try {
+                            startActivity(intent);
+                        } catch (Exception ignored) {}
+                    }
+                });
+            }
+
         }, "AndroidBridge");
 
         webView.loadUrl("file:///android_asset/index.html?mode=floating");
@@ -276,39 +325,65 @@ public class FloatingService extends Service {
         }
     }
 
-    private void createLockButton() {
-        int size = (int) (LOCK_SIZE_DP * getResources().getDisplayMetrics().density);
+    private void createButtonGroup() {
+        int density = (int) getResources().getDisplayMetrics().density;
+        int height = BUTTON_HEIGHT_DP * density;
+        int width = BUTTON_WIDTH_DP * density;
+
+        buttonGroup = new LinearLayout(this);
+        buttonGroup.setOrientation(LinearLayout.HORIZONTAL);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.RECTANGLE);
+        bg.setCornerRadius(height / 2f);
+        bg.setColor(Color.parseColor("#CC21262D"));
+        bg.setStroke(2 * density, Color.parseColor("#F0883E"));
+        buttonGroup.setBackground(bg);
+        buttonGroup.setAlpha(0.85f);
 
         lockButton = new ImageView(this);
         lockButton.setImageResource(R.drawable.ic_lock_open);
-
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(Color.parseColor("#CC21262D"));
-        bg.setStroke((int) (2 * getResources().getDisplayMetrics().density),
-                Color.parseColor("#F0883E"));
-        lockButton.setBackground(bg);
-        lockButton.setAlpha(0.6f);
-        lockButton.setPadding(size / 5, size / 5, size / 5, size / 5);
         lockButton.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        int pad = height / 5;
+        lockButton.setPadding(pad, pad, pad, pad);
 
-        lockParams = new WindowManager.LayoutParams(
-                size,
-                size,
+        swipeButton = new TextView(this);
+        swipeButton.setText("×");
+        swipeButton.setTextSize(20);
+        swipeButton.setTextColor(Color.parseColor("#666666"));
+        swipeButton.setGravity(Gravity.CENTER);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                1f
+        );
+        buttonGroup.addView(lockButton, lp);
+        LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                1f
+        );
+        buttonGroup.addView(swipeButton, lp2);
+
+        groupParams = new WindowManager.LayoutParams(
+                width,
+                height,
                 getWindowType(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
         );
-        lockParams.gravity = Gravity.TOP | Gravity.START;
-        lockParams.x = 60;
-        lockParams.y = 300;
+        groupParams.gravity = Gravity.TOP | Gravity.START;
+        groupParams.x = 60;
+        groupParams.y = 300;
 
-        lockButton.setOnTouchListener(new View.OnTouchListener() {
+        buttonGroup.setOnTouchListener(new View.OnTouchListener() {
             float downRawX, downRawY;
             int startX, startY;
             boolean moved;
             long downTime;
+            boolean hitLeft;
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -316,25 +391,32 @@ public class FloatingService extends Service {
                     case MotionEvent.ACTION_DOWN:
                         downRawX = event.getRawX();
                         downRawY = event.getRawY();
-                        startX = lockParams.x;
-                        startY = lockParams.y;
+                        startX = groupParams.x;
+                        startY = groupParams.y;
                         moved = false;
                         downTime = System.currentTimeMillis();
+                        hitLeft = event.getX() < buttonGroup.getWidth() / 2f;
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
                         float dx = event.getRawX() - downRawX;
                         float dy = event.getRawY() - downRawY;
                         if (Math.abs(dx) > 12 || Math.abs(dy) > 12) moved = true;
-                        lockParams.x = startX + (int) dx;
-                        lockParams.y = startY + (int) dy;
-                        wm.updateViewLayout(lockButton, lockParams);
+                        if (moved) {
+                            groupParams.x = startX + (int) dx;
+                            groupParams.y = startY + (int) dy;
+                            wm.updateViewLayout(buttonGroup, groupParams);
+                        }
                         return true;
 
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         if (!moved && System.currentTimeMillis() - downTime < 600) {
-                            onLockClick();
+                            if (hitLeft) {
+                                onLockClick();
+                            } else {
+                                onSwipeClick();
+                            }
                         }
                         return true;
                 }
@@ -342,7 +424,7 @@ public class FloatingService extends Service {
             }
         });
 
-        wm.addView(lockButton, lockParams);
+        wm.addView(buttonGroup, groupParams);
     }
 
     private void onLockClick() {
@@ -366,6 +448,45 @@ public class FloatingService extends Service {
         lockHandler.postDelayed(clickResolver, MULTI_CLICK_WINDOW);
     }
 
+    private void onSwipeClick() {
+        if (!locked) return;
+
+        if (!ArcAccessibilityService.isReady()) {
+            showAccessibilityDialog();
+            return;
+        }
+
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.__startAutoSwipe && window.__startAutoSwipe();", null);
+        }
+    }
+
+    private void showAccessibilityDialog() {
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("需要无障碍权限")
+                .setMessage("自动滑动功能需要开启无障碍服务。是否前往开启？")
+                .setPositiveButton("前往开启", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try {
+                            startActivity(intent);
+                        } catch (Exception ignored) {}
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setType(
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                            : WindowManager.LayoutParams.TYPE_PHONE);
+        }
+        dialog.show();
+    }
+
     private void closeFloating() {
         stopSelf();
     }
@@ -375,6 +496,15 @@ public class FloatingService extends Service {
 
         if (lockButton != null) {
             lockButton.setImageResource(locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open);
+        }
+        if (swipeButton != null) {
+            if (locked) {
+                swipeButton.setText("○");
+                swipeButton.setTextColor(Color.parseColor("#7EE787"));
+            } else {
+                swipeButton.setText("×");
+                swipeButton.setTextColor(Color.parseColor("#666666"));
+            }
         }
 
         if (locked) {
@@ -418,9 +548,11 @@ public class FloatingService extends Service {
             webView.destroy();
             webView = null;
         }
-        if (lockButton != null) {
-            try { wm.removeView(lockButton); } catch (Exception ignored) {}
-            lockButton = null;
+        if (buttonGroup != null) {
+            try { wm.removeView(buttonGroup); } catch (Exception ignored) {}
+            buttonGroup = null;
         }
+        lockButton = null;
+        swipeButton = null;
     }
 }
