@@ -63,11 +63,10 @@
   .btns button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
   .btns button.primary:hover{background:#388bfd}
 
-  #hint{position:fixed;top:20px;left:50%;transform:translate('X(-50%);
-    background:rgba(248,h81,73,.92);color:#fff;
-    padding:8intpx 18px;border-radius:8px;font-size:13');
-px;
-    box-shadow:0 4px 16px  rgba(0,0,0,. var5);
+  #hint{position:fixed;top:20px;left:50%;transform:translateX(-50%);
+    background:rgba(248,81,73,.92);color:#fff;
+    padding:8px 18px;border-radius:8px;font-size:13px;
+    box-shadow:0 4px 16px rgba(0,0,0,.5);
     z-index:50;display:none;white-space:nowrap;max-width:92vw;
     overflow:hidden;text-overflow:ellipsis}
   #hint.show{display:block}
@@ -121,14 +120,6 @@ px;
         <button class="k-btn" id="bOPlus">+</button>
       </span>
     </div>
-    <div class="kRow">
-      <span>力度</span>
-      <span class="kCtrl">
-        <button class="k-btn" id="bFMinus">−</button>
-        <span class="k-val" id="vF">300</span>
-        <button class="k-btn" id="bFPlus">+</button>
-      </span>
-    </div>
     <div class="btns">
       <button id="bReset">恢复默认</button>
     </div>
@@ -137,15 +128,6 @@ px;
     </div>
     <div class="btns">
       <button id="bLoad" class="primary">载入图片吸附</button>
-    </div>
-    <div class="btns">
-      <button id="bA11y">开启无障碍</button>
-    </div>
-    <div class="btns">
-      <button id="bAngle">显示角度</button>
-    </div>
-    <div class="btns">
-      <button id="bAutoSwipe" class="primary">自动滑动</button>
     </div>
   </div>
 </div>
@@ -190,10 +172,6 @@ px;
   var OFFSET_MIN = 0;
   var OFFSET_MAX = 300;
 
-  var FORCE_DEFAULT = 300;
-  var FORCE_MIN = 20;
-  var FORCE_MAX = 1500;
-
   var WHITE_THRESHOLD = 230;
 
   var ARROW_MIN_W = 8,  ARROW_MAX_W = 30;
@@ -207,7 +185,6 @@ px;
 
   var kInt = K_DEFAULT;
   var offset = OFFSET_DEFAULT;
-  var forceLength = FORCE_DEFAULT;
 
   var startX = 600, startY = 500;
   var endX = 1400, endY = 700;
@@ -230,12 +207,10 @@ px;
   var vO = document.getElementById('vO');
   var bOPlus = document.getElementById('bOPlus');
   var bOMinus = document.getElementById('bOMinus');
-  var vF = document.getElementById('vF');
-  var bFPlus = document.getElementById('bFPlus');
-  var bFMinus = document.getElementById('bFMinus');
   var numPad = document.getElementById('numPad');
   var npDisplay = document.getElementById('npDisplay');
-  var hintEl = document.getElementById fileInput = document.getElementById('file');
+  var hintEl = document.getElementById('hint');
+  var fileInput = document.getElementById('file');
 
   var locked = false;
 
@@ -254,9 +229,6 @@ px;
       var o = parseInt(localStorage.getItem(STORAGE_PREFIX + 'offset'), 10);
       if (!isNaN(o)) offset = Math.max(OFFSET_MIN, Math.min(OFFSET_MAX, o));
 
-      var f = parseInt(localStorage.getItem(STORAGE_PREFIX + 'forceLength'), 10);
-      if (!isNaN(f)) forceLength = Math.max(FORCE_MIN, Math.min(FORCE_MAX, f));
-
       var sx = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'startX'));
       var sy = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'startY'));
       var ex = parseFloat(localStorage.getItem(STORAGE_PREFIX + 'endX'));
@@ -272,7 +244,6 @@ px;
     try {
       localStorage.setItem(STORAGE_PREFIX + 'kInt', String(kInt));
       localStorage.setItem(STORAGE_PREFIX + 'offset', String(offset));
-      localStorage.setItem(STORAGE_PREFIX + 'forceLength', String(forceLength));
       localStorage.setItem(STORAGE_PREFIX + 'startX', String(startX));
       localStorage.setItem(STORAGE_PREFIX + 'startY', String(startY));
       localStorage.setItem(STORAGE_PREFIX + 'endX', String(endX));
@@ -316,19 +287,6 @@ px;
     vO.textContent = String(offset);
   }
 
-  function setForce(newF) {
-    newF = Math.round(newF);
-    if (newF < FORCE_MIN) newF = FORCE_MIN;
-    if (newF > FORCE_MAX) newF = FORCE_MAX;
-    if (newF === forceLength) return;
-    forceLength = newF;
-    updateForceDisplay();
-    saveStored();
-  }
-  function updateForceDisplay() {
-    vF.textContent = String(forceLength);
-  }
-
   function calcParabola(x0, y0, x1, y1, K) {
     var d = x1 - x0;
     var h = y1 - y0;
@@ -348,12 +306,7 @@ px;
     return { a: a, b: b, c: c };
   }
 
-  function getLaunchAngle(p, x0) {
-    if (!p) return null;
-    var k = 2 * p.a * x0 + p.b;
-    return Math.atan(Math.abs(k)) * 180 / Math.PI;
-  }
-
+  // 背景图：只在主界面显示
   function drawBackgroundImage() {
     if (isFloating) return;
     if (!bgImage) return;
@@ -376,6 +329,7 @@ px;
     ctx.drawImage(bgImage, dx, dy, dw, dh);
   }
 
+  // 诊断框：只在主界面显示
   function drawDetectionBoxes() {
     if (isFloating) return;
     if (!lastDetection || !lastDetection.groups) return;
@@ -557,8 +511,6 @@ px;
   bindHold(bKMinus, function () { setK(kInt - 1); });
   bindHold(bOPlus, function () { setOffset(offset + 1); });
   bindHold(bOMinus, function () { setOffset(offset - 1); });
-  bindHold(bFPlus, function () { setForce(forceLength + 10); });
-  bindHold(bFMinus, function () { setForce(forceLength - 10); });
 
   var npBuffer = '';
   var activeTarget = null;
@@ -569,8 +521,6 @@ px;
       npBuffer = (kInt / K_UNIT).toFixed(5);
     } else if (target === 'offset') {
       npBuffer = String(offset);
-    } else if (target === 'force') {
-      npBuffer = String(forceLength);
     }
     npDisplay.textContent = npBuffer;
     numPad.classList.add('show');
@@ -596,16 +546,12 @@ px;
     } else if (activeTarget === 'offset') {
       var o = parseFloat(npBuffer);
       if (!isNaN(o)) setOffset(o);
-    } else if (activeTarget === 'force') {
-      var f = parseFloat(npBuffer);
-      if (!isNaN(f)) setForce(f);
     }
     hideNumPad();
   }
 
   vK.addEventListener('click', function () { showNumPad('k'); });
   vO.addEventListener('click', function () { showNumPad('offset'); });
-  vF.addEventListener('click', function () { showNumPad('force'); });
 
   numPad.addEventListener('click', function (e) {
     var btn = e.target.closest('button');
@@ -633,6 +579,7 @@ px;
     }
   }
 
+  // ============ 箭头识别：只搜左下角 1/4 ============
   function findArrowCenter(img) {
     var off = document.createElement('canvas');
     off.width = CANVAS_W;
@@ -751,6 +698,7 @@ px;
   }
 
   function processImage(img) {
+    // 背景图只在主界面保存
     if (!isFloating) {
       bgImage = img;
     }
@@ -822,10 +770,8 @@ px;
   document.getElementById('bReset').addEventListener('click', function () {
     kInt = K_DEFAULT;
     offset = OFFSET_DEFAULT;
-    forceLength = FORCE_DEFAULT;
     updateKDisplay();
     updateOffsetDisplay();
-    updateForceDisplay();
     saveStored();
   });
 
@@ -840,73 +786,7 @@ px;
     });
   }
 
-  // ===== 开启无障碍设置页 =====
-  document.getElementById('bA11y').addEventListener('click', function () {
-    if (window.AndroidBridge && window.AndroidBridge.openAccessibilitySettings) {
-      window.AndroidBridge.openAccessibilitySettings();
-    } else {
-      alert('请在安卓 App 内使用');
-    }
-  });
-
-  // ===== 显示角度 =====
-  document.getElementById('bAngle').addEventListener('click', function () {
-    var K = getK();
-    var p = calcParabola(startX, startY, endX, endY, K);
-    if (!p) {
-      showHint('K 值过大，无法计算', true);
-      return;
-    }
-    var theta = getLaunchAngle(p, startX);
-    showHint('发射角度：' + theta.toFixed(1) + '°', true);
-  });
-
-  // ===== 自动滑动 =====
-  document.getElementById('bAutoSwipe').addEventListener('click', function () {
-    if (!window.AndroidBridge || !window.AndroidBridge.autoSwipe) {
-      showHint('请在安卓 App 内使用', true);
-      return;
-    }
-    if (!window.AndroidBridge.isAccessibilityReady()) {
-      showHint('请先开启无障碍服务', true);
-      return;
-    }
-
-    var K = getK();
-    var p = calcParabola(startX, startY, endX, endY, K);
-    if (!p) {
-      showHint('K 值过大，无法计算', true);
-      return;
-    }
-
-    var theta = getLaunchAngle(p, startX);
-    var rad = theta * Math.PI / 180;
-
-    // 滑动起点：屏幕中心
-    var sx1 = W / 2;
-    var sy1 = H / 2;
-
-    // 屏幕 y 向下，向上滑为正角度
-    var sx2 = sx1 + forceLength * Math.cos(rad);
-    var sy2 = sy1 - forceLength * Math.sin(rad);
-
-    // 先让悬浮窗触摸穿透，避免挡到手势
-    if (window.AndroidBridge.setTouchable) {
-      window.AndroidBridge.setTouchable(false);
-    }
-
-    window.AndroidBridge.autoSwipe(sx1, sy1, sx2, sy2, 300);
-
-    // 600ms 后恢复悬浮窗可触摸
-    setTimeout(function () {
-      if (window.AndroidBridge.setTouchable) {
-        window.AndroidBridge.setTouchable(true);
-      }
-    }, 600);
-
-    showHint('自动滑动：' + theta.toFixed(1) + '°', true);
-  });
-
+  // ============ 渲染循环（可暂停） ============
   var rafId = null;
 
   function tick() {
@@ -937,16 +817,15 @@ px;
       loadStored();
       updateKDisplay();
       updateOffsetDisplay();
-      updateForceDisplay();
       resumeRender();
     }
   });
 
+  // 启动
   loadStored();
   resize();
   updateKDisplay();
   updateOffsetDisplay();
-  updateForceDisplay();
   resumeRender();
 
 })();
