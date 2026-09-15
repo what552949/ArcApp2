@@ -137,7 +137,6 @@ public class FloatingService extends Service {
         });
 
         webView.addJavascriptInterface(new Object() {
-
             @JavascriptInterface
             public void requestLoadImage() {
                 lockHandler.post(new Runnable() {
@@ -147,44 +146,6 @@ public class FloatingService extends Service {
                     }
                 });
             }
-
-            @JavascriptInterface
-            public void autoSwipe(float x1, float y1, float x2, float y2, int duration) {
-                ArcAccessibilityService.swipe(x1, y1, x2, y2, duration);
-            }
-
-            @JavascriptInterface
-            public boolean isAccessibilityReady() {
-                return ArcAccessibilityService.isReady();
-            }
-
-            @JavascriptInterface
-            public void openAccessibilitySettings() {
-                Intent intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(intent);
-            }
-
-            @JavascriptInterface
-            public void setTouchable(final boolean touchable) {
-                lockHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (webParams == null) return;
-                        if (touchable) {
-                            webParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-                        } else {
-                            webParams.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-                        }
-                        if (viewAdded && webView != null) {
-                            try {
-                                wm.updateViewLayout(webView, webParams);
-                            } catch (Exception ignored) {}
-                        }
-                    }
-                });
-            }
-
         }, "AndroidBridge");
 
         webView.loadUrl("file:///android_asset/index.html?mode=floating");
