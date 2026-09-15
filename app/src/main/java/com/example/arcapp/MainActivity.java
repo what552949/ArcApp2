@@ -1,6 +1,8 @@
 package com.example.arcapp;
 
 import android.Manifest;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -25,6 +27,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int FILE_CHOOSER_REQUEST = 2001;
     private static final int OVERLAY_PERMISSION_REQUEST = 2002;
     private static final int MEDIA_PERMISSION_REQUEST = 2003;
+
+    private boolean accessibilityPrompted = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -67,21 +71,57 @@ public class MainActivity extends AppCompatActivity {
         }, "AndroidBridge");
 
         webView.loadUrl("file:///android_asset/index.html?mode=main");
+
+        webView.postDelayed(this::checkAccessibilityOnStart, 500);
     }
 
-    // ↓↓↓ 新增：主界面退到后台时，暂停 WebView 渲染与 JS ↓↓↓
+    private void checkAccessibilityOnStart() {
+        if (accessibilityPrompted) return;
+        if (isAccessibilityEnabled()) return;
+        accessibilityPrompted = true;
+        showAccessibilityDialog();
+    }
+
+    private boolean isAccessibilityEnabled() {
+        String service = getPackageName() + "/" + ArcAccessibilityService.class.getName();
+        try {
+            int enabled = Settings.Secure.getInt(getContentResolver(),
+                    Settings.Secure.ACCESSIBILITY_ENABLED, 0);
+            if (enabled != 1) return false;
+            String services = Settings.Secure.getString(getContentResolver(),
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            return services != null && services.contains(service);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void showAccessibilityDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("需要无障碍权限")
+                .setMessage("自动滑动功能需要开启无障碍服务。是否前往开启？")
+                .setPositiveButton("前往开启", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     @Override
     protected void onPause() {
         super.onPause();
         if (webView != null) {
             webView.onPause();
-            // 通知 JS 停掉渲染循环
             webView.evaluateJavascript(
                     "window.__pauseRender && window.__pauseRender();", null);
         }
     }
 
-    // ↓↓↓ 新增：主界面回到前台时，恢复 WebView ↓↓↓
     @Override
     protected void onResume() {
         super.onResume();
@@ -130,7 +170,6 @@ public class MainActivity extends AppCompatActivity {
         }
         Toast.makeText(this, "悬浮窗已启动", Toast.LENGTH_SHORT).show();
 
-        // 主动停掉主界面的渲染循环，再退到后台
         if (webView != null) {
             webView.evaluateJavascript(
                     "window.__pauseRender && window.__pauseRender();", null);
