@@ -177,11 +177,10 @@
   var ARROW_MIN_W = 8,  ARROW_MAX_W = 30;
   var ARROW_MIN_H = 10, ARROW_MAX_H = 35;
 
-  // 搜索区域：左下角 1/4
   var SEARCH_X0 = 0;
-  var SEARCH_Y0 = Math.floor(CANVAS_H / 2);   // 600
-  var SEARCH_X1 = Math.floor(CANVAS_W / 2);   // 1000
-  var SEARCH_Y1 = CANVAS_H;                    // 1200
+  var SEARCH_Y0 = Math.floor(CANVAS_H / 2);
+  var SEARCH_X1 = Math.floor(CANVAS_W / 2);
+  var SEARCH_Y1 = CANVAS_H;
 
   var kInt = K_DEFAULT;
   var offset = OFFSET_DEFAULT;
@@ -306,7 +305,6 @@
     return { a: a, b: b, c: c };
   }
 
-  // 背景图：只在主界面显示
   function drawBackgroundImage() {
     if (isFloating) return;
     if (!bgImage) return;
@@ -329,7 +327,6 @@
     ctx.drawImage(bgImage, dx, dy, dw, dh);
   }
 
-  // 诊断框：只在主界面显示
   function drawDetectionBoxes() {
     if (isFloating) return;
     if (!lastDetection || !lastDetection.groups) return;
@@ -579,7 +576,6 @@
     }
   }
 
-  // ============ 箭头识别：只搜左下角 1/4 ============
   function findArrowCenter(img) {
     var off = document.createElement('canvas');
     off.width = CANVAS_W;
@@ -698,7 +694,6 @@
   }
 
   function processImage(img) {
-    // 背景图只在主界面保存
     if (!isFloating) {
       bgImage = img;
     }
@@ -786,7 +781,85 @@
     });
   }
 
-  // ============ 渲染循环（可暂停） ============
+  // ===== 自动滑动 =====
+
+  function buildSwipePath(sx, sy, dirX, dirY, totalLen, segments) {
+    var segLen = totalLen / segments;
+    var points = [];
+
+    for (var s = 0; s < segments; s++) {
+      var s0x = sx + dirX * segLen * s;
+      var s0y = sy + dirY * segLen * s;
+      var s1x = sx + dirX * segLen * (s + 1);
+      var s1y = sy + dirY * segLen * (s + 1);
+
+      var wobbleDeg = (1 + Math.random() * 9) * (Math.random() < 0.5 ? 1 : -1);
+      var wobbleRad = wobbleDeg * Math.PI / 180;
+
+      var nx = -dirY;
+      var ny = dirX;
+
+      var midX = (s0x + s1x) / 2;
+      var midY = (s0y + s1y) / 2;
+      var offsetLen = Math.tan(wobbleRad) * segLen / 2;
+      var cx = midX + nx * offsetLen;
+      var cy = midY + ny * offsetLen;
+
+      var steps = 15;
+      for (var k = 1; k <= steps; k++) {
+        var t = k / steps;
+        var bx = (1 - t) * (1 - t) * s0x + 2 * (1 - t) * t * cx + t * t * s1x;
+        var by = (1 - t) * (1 - t) * s0y + 2 * (1 - t) * t * cy + t * t * s1y;
+        points.push({ x: bx, y: by });
+      }
+    }
+
+    return points;
+  }
+
+  window.__startAutoSwipe = function () {
+    if (!window.AndroidBridge || !window.AndroidBridge.autoSwipePath) {
+      showHint('请在安卓 App 内使用', true);
+      return;
+    }
+    if (!window.AndroidBridge.isAccessibilityReady()) {
+      showHint('请先开启无障碍服务', true);
+      return;
+    }
+
+    var K = getK();
+    var p = calcParabola(startX, startY, endX, endY, K);
+    if (!p) {
+      showHint('K 值过大，无法计算', true);
+      return;
+    }
+
+    var slope = 2 * p.a * startX + p.b;
+    var dirX = endX > startX ? 1 : -1;
+    var len = Math.sqrt(1 + slope * slope);
+    var launchDx = dirX / len;
+    var launchDy = (dirX * slope) / len;
+
+    var swipeDx = -launchDx;
+    var swipeDy = -launchDy;
+
+    var totalLen = 500;
+    var duration = 2000;
+    var segments = 3;
+
+    var logicPoints = buildSwipePath(startX, startY, swipeDx, swipeDy, totalLen, segments);
+
+    var screenPoints = [];
+    for (var i = 0; i < logicPoints.length; i++) {
+      screenPoints.push({
+        x: toScreenX(logicPoints[i].x),
+        y: toScreenY(logicPoints[i].y)
+      });
+    }
+
+    window.AndroidBridge.autoSwipePath(JSON.stringify(screenPoints), duration);
+  };
+
   var rafId = null;
 
   function tick() {
@@ -821,7 +894,6 @@
     }
   });
 
-  // 启动
   loadStored();
   resize();
   updateKDisplay();
