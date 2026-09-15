@@ -34,7 +34,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ImageView;
-import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -137,8 +136,8 @@ public class FloatingService extends Service {
             }
         });
 
-        // JS 桥：悬浮窗里点「载入图片」，自动读取相册最新一张图
         webView.addJavascriptInterface(new Object() {
+
             @JavascriptInterface
             public void requestLoadImage() {
                 lockHandler.post(new Runnable() {
@@ -148,6 +147,44 @@ public class FloatingService extends Service {
                     }
                 });
             }
+
+            @JavascriptInterface
+            public void autoSwipe(float x1, float y1, float x2, float y2, int duration) {
+                ArcAccessibilityService.swipe(x1, y1, x2, y2, duration);
+            }
+
+            @JavascriptInterface
+            public boolean isAccessibilityReady() {
+                return ArcAccessibilityService.isReady();
+            }
+
+            @JavascriptInterface
+            public void openAccessibilitySettings() {
+                Intent intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+            }
+
+            @JavascriptInterface
+            public void setTouchable(final boolean touchable) {
+                lockHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (webParams == null) return;
+                        if (touchable) {
+                            webParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                        } else {
+                            webParams.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                        }
+                        if (viewAdded && webView != null) {
+                            try {
+                                wm.updateViewLayout(webView, webParams);
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                });
+            }
+
         }, "AndroidBridge");
 
         webView.loadUrl("file:///android_asset/index.html?mode=floating");
@@ -181,6 +218,7 @@ public class FloatingService extends Service {
         webView.post(new Runnable() {
             @Override
             public void run() {
+                if (webView == null) return;
                 webView.evaluateJavascript(
                         "window.__onImageError && window.__onImageError('" + safe + "');", null);
             }
@@ -223,7 +261,6 @@ public class FloatingService extends Service {
 
             Uri imageUri = ContentUris.withAppendedId(collection, id);
 
-            // 先看尺寸
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
             InputStream is1 = cr.openInputStream(imageUri);
@@ -237,7 +274,6 @@ public class FloatingService extends Service {
                 return;
             }
 
-            // 采样率：让解码后宽度不超过 2000
             int sampleSize = 1;
             while (w0 / sampleSize > 2000) {
                 sampleSize *= 2;
@@ -267,6 +303,7 @@ public class FloatingService extends Service {
             webView.post(new Runnable() {
                 @Override
                 public void run() {
+                    if (webView == null) return;
                     webView.evaluateJavascript(
                             "window.__onImageLoaded && window.__onImageLoaded('" + dataUri + "');",
                             null);
@@ -375,15 +412,19 @@ public class FloatingService extends Service {
     private void toggleLock() {
         locked = !locked;
 
-        lockButton.setImageResource(locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open);
+        if (lockButton != null) {
+            lockButton.setImageResource(locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open);
+        }
 
         if (locked) {
             webParams.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         } else {
             webParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         }
-        if (viewAdded) {
-            wm.updateViewLayout(webView, webParams);
+        if (viewAdded && webView != null) {
+            try {
+                wm.updateViewLayout(webView, webParams);
+            } catch (Exception ignored) {}
         }
 
         if (webView != null) {
@@ -408,7 +449,10 @@ public class FloatingService extends Service {
         super.onDestroy();
         viewAdded = false;
         lockHandler.removeCallbacks(clickResolver);
+
         if (webView != null) {
+            try { webView.stopLoading(); } catch (Exception ignored) {}
+            try { webView.loadUrl("about:blank"); } catch (Exception ignored) {}
             try { wm.removeView(webView); } catch (Exception ignored) {}
             webView.destroy();
             webView = null;
